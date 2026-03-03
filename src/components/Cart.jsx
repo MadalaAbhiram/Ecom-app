@@ -3,6 +3,15 @@ import Footer from "./Footer";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+const PAYMENT_OPTIONS = ["UPI", "Credit Card", "Debit Card", "Net Banking", "Cash on Delivery"];
+
+const makeUniqueId = (prefix) => {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+};
+
 function Cart() {
   const [cartItems, setCartItems] = useState([]);
   const [userOrders, setUserOrders] = useState([]);
@@ -10,6 +19,9 @@ function Cart() {
   const [userId, setUserId] = useState("");
   const [userName, setUserName] = useState("");
   const [userEmail, setUserEmail] = useState("");
+  const [orderForPayment, setOrderForPayment] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState(PAYMENT_OPTIONS[0]);
+  const [paymentLoading, setPaymentLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -75,7 +87,9 @@ function Cart() {
       return;
     }
 
-    if (cartItems.length === 0) {
+    const liveCart = JSON.parse(localStorage.getItem("cart")) || [];
+
+    if (liveCart.length === 0) {
       alert("Your cart is empty!");
       return;
     }
@@ -90,19 +104,26 @@ function Cart() {
     setLoading(true);
 
     const orders = JSON.parse(localStorage.getItem("orders")) || [];
+    const orderUniqueId = makeUniqueId("order");
+    const orderDisplayId = makeUniqueId("ORD").toUpperCase();
+    const liveTotal = liveCart.reduce(
+      (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1),
+      0
+    );
+
     const newOrder = {
-      _id: `order-${Date.now()}`,
-      orderId: `ORD-${Date.now()}`,
+      _id: orderUniqueId,
+      orderId: orderDisplayId,
       userId,
       userName,
       userEmail,
-      products: cartItems.map((item) => ({
+      products: liveCart.map((item) => ({
         productId: String(item.id),
         productName: item.title,
         price: item.price,
         quantity: item.quantity || 1
       })),
-      totalAmount: totalPrice,
+      totalAmount: liveTotal,
       status: "PENDING",
       createdAt: new Date().toISOString()
     };
@@ -114,8 +135,58 @@ function Cart() {
     setCartItems([]);
     localStorage.removeItem("cart");
     setLoading(false);
-    alert("Order sent to admin for approval");
-    navigate("/Products1");
+    alert(`Order ${orderDisplayId} sent to admin for approval`);
+    navigate("/cart");
+  };
+
+  const openPaymentOptions = (order) => {
+    if (order.status !== "APPROVED") {
+      alert("This order is not approved by admin yet.");
+      return;
+    }
+
+    if (order.paymentStatus === "SUCCESS") {
+      alert("Payment already completed for this order.");
+      return;
+    }
+
+    setOrderForPayment(order);
+    setPaymentMethod(PAYMENT_OPTIONS[0]);
+  };
+
+  const closePaymentOptions = () => {
+    if (paymentLoading) {
+      return;
+    }
+    setOrderForPayment(null);
+  };
+
+  const handlePaymentSuccess = () => {
+    if (!orderForPayment) {
+      return;
+    }
+
+    setPaymentLoading(true);
+
+    setTimeout(() => {
+      const allOrders = JSON.parse(localStorage.getItem("orders")) || [];
+      const updatedOrders = allOrders.map((order) =>
+        order._id === orderForPayment._id
+          ? {
+              ...order,
+              paymentStatus: "SUCCESS",
+              paymentMethod,
+              paymentAt: new Date().toISOString()
+            }
+          : order
+      );
+
+      localStorage.setItem("orders", JSON.stringify(updatedOrders));
+      setUserOrders(getOrdersForUser(updatedOrders, userId, userEmail));
+      setOrderForPayment(null);
+      setPaymentLoading(false);
+      alert("Payment successful! Your order is confirmed.");
+    }, 1200);
   };
 
   const deleteProductAsAdmin = (productId) => {
@@ -268,6 +339,14 @@ function Cart() {
                       <strong>Status:</strong>{" "}
                       {order.status === "REJECTED" ? "Not Approved" : order.status}
                     </p>
+                    <p>
+                      <strong>Payment:</strong>{" "}
+                      {order.paymentStatus === "SUCCESS"
+                        ? `Success (${order.paymentMethod || "Method not saved"})`
+                        : order.status === "APPROVED"
+                          ? "Pending - ready to pay"
+                          : "Not available"}
+                    </p>
                     {order.status === "REJECTED" && order.rejectionReason && (
                       <p><strong>Reason:</strong> {order.rejectionReason}</p>
                     )}
@@ -279,9 +358,126 @@ function Cart() {
                         </p>
                       </div>
                     ))}
+
+                    {order.status === "APPROVED" && order.paymentStatus !== "SUCCESS" && (
+                      <button
+                        onClick={() => openPaymentOptions(order)}
+                        style={{
+                          padding: "10px 14px",
+                          backgroundColor: "#ff9900",
+                          color: "white",
+                          border: "none",
+                          cursor: "pointer",
+                          borderRadius: "4px",
+                          fontWeight: "bold",
+                          marginTop: "6px"
+                        }}
+                      >
+                        Buy Product / Pay Now
+                      </button>
+                    )}
+
+                    {order.paymentStatus === "SUCCESS" && (
+                      <p style={{ color: "#228b22", fontWeight: "bold", marginTop: "6px" }}>
+                        Payment success. Order purchased.
+                      </p>
+                    )}
                   </div>
                 ))
             )}
+          </div>
+        )}
+
+        {orderForPayment && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              backgroundColor: "rgba(0,0,0,0.45)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 2000,
+              padding: "14px"
+            }}
+          >
+            <div
+              style={{
+                width: "min(460px, 100%)",
+                borderRadius: "10px",
+                background: "#fff",
+                padding: "20px",
+                boxShadow: "0 10px 30px rgba(0,0,0,0.2)"
+              }}
+            >
+              <h2 style={{ marginTop: 0 }}>Choose Payment Option</h2>
+              <p style={{ marginBottom: "8px" }}>
+                <strong>Order:</strong> {orderForPayment.orderId}
+              </p>
+              <p style={{ margin: "0 0 8px" }}>
+                <strong>Name:</strong> {orderForPayment.userName || userName}
+              </p>
+              <p style={{ marginTop: 0 }}>
+                <strong>Amount:</strong> Rs.{Number(orderForPayment.totalAmount || 0).toFixed(2)}
+              </p>
+
+              <label htmlFor="paymentMethod"><strong>Payment Method</strong></label>
+              <select
+                id="paymentMethod"
+                value={paymentMethod}
+                onChange={(event) => setPaymentMethod(event.target.value)}
+                style={{
+                  width: "100%",
+                  marginTop: "8px",
+                  padding: "10px",
+                  borderRadius: "6px",
+                  border: "1px solid #ccc"
+                }}
+              >
+                {PAYMENT_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+
+              <p style={{ color: "#555", fontSize: "14px", marginTop: "12px" }}>
+                Demo payment only. No real money will be charged.
+              </p>
+
+              <div style={{ display: "flex", gap: "10px", marginTop: "18px" }}>
+                <button
+                  onClick={closePaymentOptions}
+                  disabled={paymentLoading}
+                  style={{
+                    flex: 1,
+                    padding: "10px",
+                    borderRadius: "6px",
+                    border: "1px solid #aaa",
+                    background: "#fff",
+                    cursor: paymentLoading ? "not-allowed" : "pointer"
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handlePaymentSuccess}
+                  disabled={paymentLoading}
+                  style={{
+                    flex: 1,
+                    padding: "10px",
+                    borderRadius: "6px",
+                    border: "none",
+                    background: paymentLoading ? "#999" : "#008296",
+                    color: "white",
+                    fontWeight: "bold",
+                    cursor: paymentLoading ? "not-allowed" : "pointer"
+                  }}
+                >
+                  {paymentLoading ? "Processing..." : "Pay Now"}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

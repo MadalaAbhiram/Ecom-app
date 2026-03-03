@@ -156,12 +156,37 @@ function ApproveOrders() {
   const filteredOrders = filter === "ALL"
     ? orders
     : orders.filter((order) => order.status === filter);
+  const pendingCount = orders.filter((order) => order.status === "PENDING").length;
 
   return (
     <>
       <Header />
       <div style={{ padding: "110px 20px 90px", maxWidth: "1000px", margin: "0 auto" }}>
         <h1>Admin Order Permission Panel</h1>
+        <p style={{ marginTop: "-6px", color: "#555" }}>
+          Current filter: <strong>{filter}</strong>
+        </p>
+
+        {pendingCount > 0 && filter !== "PENDING" && (
+          <div
+            style={{
+              marginBottom: "14px",
+              padding: "10px 12px",
+              borderRadius: "8px",
+              background: "#fff8e1",
+              border: "1px solid #f2d17d",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "10px"
+            }}
+          >
+            <span>
+              {pendingCount} order(s) are waiting for approval.
+            </span>
+            <button onClick={() => setFilter("PENDING")}>Show Pending</button>
+          </div>
+        )}
 
         <div style={{ marginBottom: "20px", display: "flex", gap: "10px" }}>
           <button onClick={() => setFilter("ALL")}>All ({orders.length})</button>
@@ -174,12 +199,15 @@ function ApproveOrders() {
         {filteredOrders.length === 0 ? (
           <p>{filter === "ALL" ? "No orders found" : `No ${filter.toLowerCase()} orders`}</p>
         ) : (
-          filteredOrders.map((order) => (
-            <div key={order._id} style={{ border: "1px solid #ddd", padding: "12px", borderRadius: "8px", marginBottom: "12px" }}>
+          filteredOrders.map((order, index) => (
+            <div key={`${order._id}-${order.createdAt || index}`} style={{ border: "1px solid #ddd", padding: "12px", borderRadius: "8px", marginBottom: "12px" }}>
               <p><strong>{order.orderId}</strong></p>
               <p>User: {order.userName} ({order.userEmail})</p>
               <p>Total: Rs.{order.totalAmount}</p>
               <p>Status: {order.status}</p>
+              <p>
+                Payment: {order.paymentStatus === "SUCCESS" ? `SUCCESS (${order.paymentMethod || "Method not saved"})` : "PENDING"}
+              </p>
               <button onClick={() => openOrderDetails(order._id)}>View Details</button>
             </div>
           ))
@@ -190,6 +218,12 @@ function ApproveOrders() {
             <h2>{selectedOrder.orderId}</h2>
             <p><strong>Customer:</strong> {selectedOrder.userName}</p>
             <p><strong>Status:</strong> {selectedOrder.status}</p>
+            <p>
+              <strong>Payment:</strong>{" "}
+              {selectedOrder.paymentStatus === "SUCCESS"
+                ? `SUCCESS (${selectedOrder.paymentMethod || "Method not saved"})`
+                : "PENDING"}
+            </p>
 
             {(Array.isArray(selectedOrder.products) ? selectedOrder.products : []).map((product, index) => (
               <div key={`${product.productId}-${index}`} style={{ borderBottom: "1px solid #eee", padding: "10px 0" }}>
